@@ -50,7 +50,7 @@ void reset_all_keys(){
 
 void onPacketReceived(const uint8_t* buffer, size_t size){
   
-  if(size<6){
+  if(size<5){
     Serial.write(0x01);
     Serial.printf("Got under-length message: %02d bytes\n", size);
     Serial.flush();
@@ -64,7 +64,6 @@ void onPacketReceived(const uint8_t* buffer, size_t size){
 #ifdef DEBUG
   Serial.printf("Calculated checksum %02X, sent checksum %04x\n", calculated_sum, checksum);
   Serial.printf("modifiers %02x timing_down %02x timing_up %02x\n", modifiers, timing_down, timing_up);
-  
 #endif
 
   if(calculated_sum != checksum){
@@ -73,23 +72,46 @@ void onPacketReceived(const uint8_t* buffer, size_t size){
     Serial.flush();
     return;
   }
-  if(timing_down!=0xFF){
-    reset_all_keys();
-    Keyboard.set_modifier(MODFIERKEY_GENERIC | modifiers);
-  
-    for(size_t i=5;i<size;i++){
-      keyboard_keys[i-5] = buffer[i];
+  if(size==12 && buffer[5]=='m' && buffer[6]=='o' && buffer[7]=='u' && buffer[8]=='s' && buffer[9]=='e'){
+    Mouse.move(buffer[10],buffer[11]);
+    Serial.write(0x00);
+    return;
+  }else if(size==10){
+    if(buffer[5]=='c' && buffer[6]=='l' && buffer[7]=='i' && buffer[8]=='c' && buffer[9]=='k'){
+      if(timing_down!=0xFF){
+        Mouse.set_buttons(modifiers&MOUSE_LEFT,modifiers&MOUSE_MIDDLE,modifiers&MOUSE_RIGHT,modifiers&MOUSE_BACK,modifiers&MOUSE_FORWARD);
+        delay(timing_down * 10);
+      }
+      if(timing_up!=0xFF){
+        Mouse.set_buttons(0);
+        delay(timing_up * 10);
+      }
+      Serial.write(0x00);
+      return;
     }
-  
-    Keyboard.send_now();
-    delay(timing_down * 10);
+  }else{
+    // Fallthrough to Keyboard
+    if(timing_down!=0xFF){
+      reset_all_keys();
+      Keyboard.set_modifier(MODFIERKEY_GENERIC | modifiers);
+    
+      for(size_t i=5;i<size;i++){
+        keyboard_keys[i-5] = buffer[i];
+      }
+    
+      Keyboard.send_now();
+      delay(timing_down * 10);
+    }
+    if(timing_up!=0xFF){
+      reset_all_keys();
+      delay(timing_up * 10);
+      Keyboard.send_now();
+      //Serial.write(0x02);
+      //Serial.printf("Asked to release");
+      //Serial.flush();
+    }
+    Serial.write(0x00);
   }
-  if(timing_up!=0xFF){
-    reset_all_keys();
-    delay(timing_up * 10);
-    Keyboard.send_now();
-  }
-  Serial.write(0x00);
 }
 
 void loop() {
